@@ -5,10 +5,26 @@ module Rb
     def import(path)
       box = Ruby::Box.new
       box.require(__FILE__)
-      box.require(File.expand_path(path, Dir.pwd))
 
-      exports = box.const_get(:EXPORTS)
-      process_exports(exports)
+      # Resolve relative/absolute file paths; fall back to gem name lookup
+      expanded = File.expand_path(path, Dir.pwd)
+      if File.exist?(expanded) || File.exist?("#{expanded}.rb")
+        box.require(expanded)
+      else
+        # Gem import: inject transitive load paths into the box first
+        gem_require_paths(path).each do |p|
+          box.eval("$LOAD_PATH << #{p.inspect}")
+        end
+        box.require(path)
+      end
+
+      begin
+        exports = box.const_get(:EXPORTS)
+        process_exports(exports)
+      rescue NameError
+        # Legacy package/ with no EXPORTS — build a lazy proxy module
+        build_legacy_proxy(box)
+      end
     end
 
     def export(*args, **kwargs)
@@ -27,6 +43,66 @@ module Rb
     end
 
     private
+
+    def gem_require_paths(name, visited = Set.new)
+      return [] if visited.include?(name)
+
+      visited << name
+      spec = Gem::Specification.find_by_name(name)
+      paths = spec.full_require_paths.dup
+      spec.runtime_dependencies.each do |dep|
+        paths.concat(gem_require_paths(dep.name, visited))
+      end
+      paths
+    rescue Gem::MissingSpecError
+      []
+    end
+
+    def build_legacy_proxy(box)
+      Module.new do
+        @box = box
+
+        # Lazily resolve any constant defined inside the box
+        def self.const_missing(name)
+          @box.const_get(name)
+        rescue NameError
+          raise NameError, "uninitialized constant #{name}"
+        end
+
+        # Singleton methods/values: delegate via eval inside the box
+        def self.method_missing(name, *args, **kw, &blk)
+          @box.eval(name.to_s)
+        rescue NameError, NoMethodError
+          super
+        end
+
+        def self.respond_to_missing?(name, include_private = false)
+          true
+        end
+
+        # Pattern matching destructuring
+        def self.deconstruct_keys(keys)
+          return {} unless keys
+
+          keys.each_with_object({}) do |key, hash|
+            name = key.to_s
+            hash[key] = if name.match?(/\A[A-Z]/)
+              begin
+                @box.const_get(name)
+              rescue NameError
+                next
+              end
+            else
+              begin
+                @box.eval(name)
+              rescue NameError, NoMethodError
+                next
+              end
+            end
+          end
+        end
+      end
+    end
 
     def process_exports(exports)
       if exports.is_a?(Hash)

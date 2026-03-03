@@ -109,7 +109,15 @@ end
  
  ## Example
  
+ Simple example:
  ```ruby
- cd example
- RUBY_BOX=1 ruby main.rb
+ cd examples/simple
+ RUBYbox=1 ruby main.rb
+ ```
+
+ Example importing a legacy gem/package:
+ ```ruby
+ cd examples/legacy_gem
+ gem install faker
+ RUBYbox=1 ruby main.rb
  ```
