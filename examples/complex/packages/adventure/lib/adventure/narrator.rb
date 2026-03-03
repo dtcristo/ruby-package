@@ -1,3 +1,4 @@
+# Require instead of import to get `String#colorize`
 require 'colorize'
 
 module Adventure

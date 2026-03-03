@@ -152,6 +152,28 @@ Faker = import('faker').fetch(:Faker)
 puts "Hello, #{Faker::Name.name}!"
 ```
 
+## Per-Package Gem Dependencies
+
+Each package can have its own isolated gem bundle. Set `BUNDLE_GEMFILE` and call `require 'bundler/setup'` at the top of the package's entry file, **before** any `import` calls:
+
+```ruby
+# packages/my_package/lib/my_package.rb
+ENV['BUNDLE_GEMFILE'] = File.expand_path('../gems.rb', __dir__)
+require 'bundler/setup'
+
+# Now gems from this package's bundle are on $LOAD_PATH
+# and import() for gem names will find them.
+Faker = import('faker')::Faker
+
+# ... rest of package
+```
+
+Because every `import` runs in its own `Ruby::Box` with its own isolated `$LOAD_PATH`, each package's gem bundle is completely separate from others — two packages can even use different versions of the same gem.
+
+### How `import` resolves `$LOAD_PATH`
+
+`import` captures a live reference to the calling box's `$LOAD_PATH` at definition time using `define_method`. Since `bundler/setup` **mutates** (not replaces) the same array object, paths added by `bundler/setup` are automatically visible when `import` resolves names. The child box's C-level `$LOAD_PATH` (searched by `require`) is seeded by writing a temp file of `$LOAD_PATH.unshift` calls and running it via `box.require`, so that native `require` inside the child box works correctly.
+
 ## Examples
 
 ### Minimal
@@ -164,15 +186,20 @@ RUBY_BOX=1 ruby examples/minimal/main.rb
 
 ### Complex
 
-An adventure game with three packages in a `packages/` directory using zeitwerk-style naming. Demonstrates all features including `bundler/setup` for gem dependencies, cross-package imports, `fetch`/`fetch_values`, constants, and re-exports.
+An adventure game with three packages in a `packages/` directory using zeitwerk-style naming. Demonstrates all features including `bundler/setup` for per-package gem dependencies, cross-package `import`, `fetch`/`fetch_values`, constants, and namespace-qualified gem constants.
 
-- **adventure**: Uses `faker` and `colorize` gems via its own `gems.rb` and `bundler/setup`
-- **quest**: Hash exports with constants, version strings, and callable methods
-- **loot**: Cross-package `import_relative` from quest, single export with hash
+- **adventure**: Uses `faker` and `colorize` gems via its own `gems.rb` and `bundler/setup`. Imports faker as `Faker = import('faker')::Faker`.
+- **quest**: Pure-Ruby package. Hash exports with constants, version strings, and callable methods.
+- **loot**: Uses `faker` gem via its own `gems.rb` and `bundler/setup` (each box gets an isolated Faker constant). Cross-package `import 'quest'`.
+
+Each package adds all sibling `packages/*/lib` dirs to `$LOAD_PATH` so cross-package imports resolve by name. `main.rb` does the same before calling `import`.
+
+> **Note**: `Process.exit!(0)` is called at the end of `main.rb` to bypass a known Ruby::Box experimental VM teardown crash ([see Ruby docs](https://docs.ruby-lang.org/en/4.0/Ruby/Box.html)) that occurs when multiple boxes have loaded native-extension gems (e.g. `concurrent-ruby`, a faker transitive dependency).
 
 ```sh
-# Install adventure package gems (first time only)
+# Install gems for packages that need them (first time only)
 cd examples/complex/packages/adventure && BUNDLE_GEMFILE=gems.rb bundle install && cd -
+cd examples/complex/packages/loot && BUNDLE_GEMFILE=gems.rb bundle install && cd -
 
 RUBY_BOX=1 ruby examples/complex/main.rb
 ```

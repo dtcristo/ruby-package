@@ -29,11 +29,13 @@ module Loot
       @power = rand(POWER.fetch(tier, 1..10))
     end
 
-    def to_s = "#{@name} [#{@tier}] (power: #{@power})"
+    def to_s = "#{@name} [#{@tier}] (power: #{@power}) — slain by #{@flavor}"
 
-    def self.random(tier = :common)
+    def self.random(tier = :common, flavor = nil)
       name = ITEMS.fetch(tier, ITEMS[:common]).sample
-      new(name, tier)
+      item = new(name, tier)
+      item.instance_variable_set(:@flavor, flavor || 'a nameless beast')
+      item
     end
   end
 end
