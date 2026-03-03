@@ -1,0 +1,41 @@
+# frozen_string_literal: true
+
+require_relative '../../test_helper'
+
+FIXTURES = File.expand_path('../../fixtures', __dir__)
+
+class ExportTest < Minitest::Test
+  def test_single_export_returns_class
+    result = import("#{FIXTURES}/single_export")
+    assert_equal 'User', result.name
+    user = result.new('Alice')
+    assert_equal 'Hello, Alice!', user.greet
+  end
+
+  def test_hash_export_returns_module_with_methods
+    result = import("#{FIXTURES}/hash_export")
+    assert_equal 10, result.add(3, 7)
+    assert_equal 6, result.subtract(10, 4)
+    assert_equal '1.0.0', result.version
+  end
+
+  def test_hash_export_returns_module_with_constants
+    result = import("#{FIXTURES}/hash_export")
+    assert_in_delta 3.14159, result::PI
+  end
+
+  def test_bare_export_returns_box
+    result = import("#{FIXTURES}/bare")
+    assert_kind_of Ruby::Box, result
+  end
+
+  def test_bare_export_fetch_constant
+    result = import("#{FIXTURES}/bare")
+    assert_equal 'hello from bare', result.fetch(:GREETING)
+  end
+
+  def test_bare_export_fetch_method
+    result = import("#{FIXTURES}/bare")
+    assert_equal 42, result.fetch(:helper)
+  end
+end

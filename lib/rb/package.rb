@@ -73,6 +73,20 @@ module Rb
       []
     end
 
+    def self.extract_exports(box)
+      begin
+        box::Rb::Package::Exports
+      rescue NameError
+        begin
+          box::Rb::Package::EXPORT
+        rescue NameError
+          # Bare package/gem with no exports — return the Box instance directly
+          inject_methods(box, nil, box)
+          box
+        end
+      end
+    end
+
     module Kernel
       def import(path)
         box = Ruby::Box.new
@@ -90,20 +104,18 @@ module Rb
           box.require(path)
         end
 
-        # Check for Exports module - hash exports
-        begin
-          exports_module = box::Rb::Package::Exports
-          return exports_module
-        rescue NameError
-          # Fall back to EXPORT constant - single exports
-          begin
-            return box::Rb::Package::EXPORT
-          rescue NameError
-            # Bare package/gem with no exports — return the Box instance directly
-            Rb::Package.inject_methods(box, nil, box)
-            return box
-          end
-        end
+        Rb::Package.extract_exports(box)
+      end
+
+      def import_relative(path)
+        caller_dir = File.dirname(caller_locations(1, 1).first.path)
+        absolute_path = File.expand_path(path, caller_dir)
+
+        box = Ruby::Box.new
+        box.require(__FILE__)
+        box.require(absolute_path)
+
+        Rb::Package.extract_exports(box)
       end
 
       def export(*args, **kwargs)
