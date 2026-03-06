@@ -4,15 +4,6 @@ raise 'Ruby 4.0+ is required for Package' if RUBY_VERSION.to_f < 4.0
 
 require 'tempfile'
 
-# Global registry of boxes created by import/import_relative. Kept alive here
-# to prevent Ruby::Box GC crashes when boxes that loaded native-extension gems
-# (e.g. faker → concurrent-ruby) are collected during process exit. Using a
-# global ensures boxes created inside child boxes register with the same list.
-# Globals are process-wide in Ruby::Box (they do not leak *between* boxes, but a
-# child box can read/write the outer process's globals). This does NOT leak
-# between unrelated Ruby processes; Ruby::Box prevents that.
-$package_boxes ||= []
-
 module Package
   def self.inject_methods(obj, exports_map = nil, box = nil)
     # Use a local variable to capture exports_map in the closures
@@ -77,7 +68,7 @@ module Package
     # is only updated when code runs as native box code via box.require(file).
     # We write a temp file containing the unshift calls and require it so that
     # the seeding happens in the box's native execution context.
-    tmp = Tempfile.new(%w[rb_pkg_lp_ .rb])
+    tmp = Tempfile.new(%w[_package_lp .rb])
     begin
       paths.each do |p|
         tmp.puts(
@@ -116,21 +107,20 @@ module Package
     # visible through this reference. Without this capture, reading $LOAD_PATH
     # inside a def-based method always sees the outer process's $LOAD_PATH even
     # when the method is invoked from within a box.
-    _lp = $LOAD_PATH
+    _package_lp = $LOAD_PATH
 
     define_method(:import) do |path|
       box = Ruby::Box.new
-      $package_boxes << box # prevent GC; see comment above
       box.require(__FILE__)
 
       # Seed the child box's C-level $LOAD_PATH by requiring a temp file that
       # runs $LOAD_PATH.unshift for each path as native box code. box.eval based
       # seeding only modifies the Ruby-level $LOAD_PATH array; the C-level array
       # (searched by require) is only updated when code runs as box-native code
-      # via box.require(absolute_file). _lp is a live reference to the defining
-      # box's $LOAD_PATH array — bundler/setup paths added after this file loads
-      # are included automatically.
-      Package.seed_box_load_path(box, _lp)
+      # via box.require(absolute_file). _package_lp is a live reference to the
+      # defining box's $LOAD_PATH array — bundler/setup paths added after this
+      # file loads are included automatically.
+      Package.seed_box_load_path(box, _package_lp)
 
       expanded = File.expand_path(path, Dir.pwd)
       if File.exist?(expanded) || File.exist?("#{expanded}.rb")
@@ -139,7 +129,7 @@ module Package
         # Resolve gem/package names by searching the defining box's $LOAD_PATH
         # for the entry file and using an absolute path with box.require.
         resolved =
-          _lp
+          _package_lp
             .lazy
             .flat_map { |dir| ["#{dir}/#{path}.rb", "#{dir}/#{path}"] }
             .find { |f| File.exist?(f) }
@@ -154,11 +144,10 @@ module Package
       absolute_path = File.expand_path(path, caller_dir)
 
       box = Ruby::Box.new
-      $package_boxes << box # prevent GC; see comment above
       box.require(__FILE__)
 
       # Same C-level $LOAD_PATH seeding as import above.
-      Package.seed_box_load_path(box, _lp)
+      Package.seed_box_load_path(box, _package_lp)
 
       box.require(absolute_path)
 
