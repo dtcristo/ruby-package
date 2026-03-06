@@ -1,6 +1,6 @@
 # Rb::Package
 
-This system brings strict, ES Module style encapsulation to Ruby using `Ruby::Box` (requires Ruby 4.0+). Every file is evaluated in a completely isolated namespace, preventing constant leaks and global namespace pollution.
+This system brings strict, ES Module style encapsulation to Ruby using [`Ruby::Box`](https://docs.ruby-lang.org/en/4.0/Ruby/Box.html) (requires Ruby 4.0+). Every file is evaluated in a completely isolated namespace, preventing constant leaks and global namespace pollution.
 
 ## Exporting (`export`)
 
@@ -138,16 +138,7 @@ end
 If a gem or script file doesn't export anything explicitly (no `export` call), `import` returns the isolated Box instance itself. This allows you to access any constants or methods defined within that gem/script directly through the Box namespace. See the "Importing Constants" section above for all available approaches.
 
 ```ruby
-# Most direct approach
 Faker = import('faker')::Faker
-
-puts "Hello, #{Faker::Name.name}!"
-```
-
-Or with `fetch()`:
-
-```ruby
-Faker = import('faker').fetch(:Faker)
 
 puts "Hello, #{Faker::Name.name}!"
 ```
@@ -190,11 +181,11 @@ An adventure game with three packages in a `packages/` directory using zeitwerk-
 
 - **adventure**: Uses `faker` and `colorize` gems via its own `gems.rb` and `bundler/setup`. Imports faker as `Faker = import('faker')::Faker`.
 - **quest**: Pure-Ruby package. Hash exports with constants, version strings, and callable methods.
-- **loot**: Uses `faker` gem via its own `gems.rb` and `bundler/setup` (each box gets an isolated Faker constant). Cross-package `import 'quest'`.
+- **loot**: Uses `faker` gem via its own `gems.rb` and `bundler/setup` (each box gets an isolated `Faker` constant). Cross-package `import 'quest'`.
 
 Each package adds all sibling `packages/*/lib` dirs to `$LOAD_PATH` so cross-package imports resolve by name. `main.rb` does the same before calling `import`.
 
-> **Note**: `Process.exit!(0)` is called at the end of `main.rb` to bypass a known Ruby::Box experimental VM teardown crash ([see Ruby docs](https://docs.ruby-lang.org/en/4.0/Ruby/Box.html)) that occurs when multiple boxes have loaded native-extension gems (e.g. `concurrent-ruby`, a faker transitive dependency).
+> **Note**: `Process.exit!(0)` is called at the end of `main.rb` to bypass a known `Ruby::Box` experimental VM teardown crash that occurs when multiple boxes have loaded native-extension gems (e.g. `concurrent-ruby`, a faker transitive dependency).
 
 ```sh
 # Install gems for packages that need them (first time only)
